@@ -118,7 +118,7 @@ impl CacheBuilder {
     pub async fn build(
         self,
         addr: impl Into<String>,
-    ) -> Result<(Cache, impl Stream<Item = Event>)> {
+    ) -> Result<(Cache, impl Stream<Item=Event>)> {
         Cache::new(addr, self).await
     }
 }
@@ -127,12 +127,13 @@ impl CacheBuilder {
 /// ```rust
 /// use futures::StreamExt;
 /// use zookeeper_cache_rust::CacheBuilder;
-/// let (cache,mut stream) = CacheBuilder::default().build("localhost:2181").await?;
+/// let (cache, mut stream) = CacheBuilder::default().build("localhost:2181").await?;
 /// tokio::spawn(async move{
 ///    while let Some(event) = stream.next().await{
 ///         // handle event
 ///     }
 /// });
+/// let val = cache.get("/");
 /// ```
 pub struct Cache {
     addr: String,
@@ -152,7 +153,7 @@ impl Cache {
     pub async fn new(
         addr: impl Into<String>,
         builder: CacheBuilder,
-    ) -> Result<(Self, impl Stream<Item = Event>)> {
+    ) -> Result<(Self, impl Stream<Item=Event>)> {
         let mut connector: zookeeper_client::Connector = (&builder).into();
         let addr = addr.into();
         let client = connector.connect(&addr).await?;
@@ -172,6 +173,10 @@ impl Cache {
         Ok((cache, events))
     }
 
+    pub async fn get(&self, path: &str) -> Option<SharedChildData> {
+        self.storage.read().await.data.get(path).cloned()
+    }
+
     async fn init_nodes(
         &self,
         client: &zookeeper_client::Client,
@@ -184,7 +189,7 @@ impl Cache {
             &mut new.write().await,
             sender,
         )
-        .await?;
+            .await?;
         // send events of existed node
         let old = self.storage.read().await;
         let new = new.read().await;
@@ -358,7 +363,7 @@ impl Cache {
                 data,
                 stat,
             }
-            .into(),
+                .into(),
         );
         {
             let sender = sender.clone();
