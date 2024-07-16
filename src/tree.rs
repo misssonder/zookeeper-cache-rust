@@ -35,7 +35,7 @@ where
         T: Borrow<B>,
         B: Hash + Eq + ?Sized,
     {
-        if let None = self.nodes.get(child.borrow()) {
+        if !self.nodes.contains_key(child.borrow()) {
             let item = self.graph.add_node(child.clone());
             self.nodes.insert(child, item);
             self.graph.add_edge(self.nodes[parent.borrow()], item, 0);
@@ -104,7 +104,7 @@ mod tests {
             tree.add_child("/a", format!("/a/{}", i));
             assert_eq!(tree.children("/a").len(), i + 1)
         }
-        for i in (0..len).into_iter().rev() {
+        for i in (0..len).rev() {
             let res = tree.remove_child(&format!("/a/{}", i));
             assert!(res.is_some());
             assert_eq!(tree.children("/a").len(), i)
