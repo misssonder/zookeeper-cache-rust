@@ -1,5 +1,5 @@
 use crate::tree::Tree;
-use crate::{ChildData, Error, Event};
+use crate::{ChildData, Event};
 use crate::{EventStream, Result, SharedChildData};
 use async_recursion::async_recursion;
 use futures::StreamExt;
@@ -118,7 +118,7 @@ impl CacheBuilder {
     pub async fn build(
         self,
         addr: impl Into<String>,
-    ) -> Result<(Cache, impl Stream<Item=Event>)> {
+    ) -> Result<(Cache, impl Stream<Item = Event>)> {
         Cache::new(addr, self).await
     }
 }
@@ -153,7 +153,7 @@ impl Cache {
     pub async fn new(
         addr: impl Into<String>,
         builder: CacheBuilder,
-    ) -> Result<(Self, impl Stream<Item=Event>)> {
+    ) -> Result<(Self, impl Stream<Item = Event>)> {
         let mut connector: zookeeper_client::Connector = (&builder).into();
         let addr = addr.into();
         let client = connector.connect(&addr).await?;
@@ -189,7 +189,7 @@ impl Cache {
             &mut new.write().await,
             sender,
         )
-            .await?;
+        .await?;
         // send events of existed node
         let old = self.storage.read().await;
         let new = new.read().await;
@@ -281,7 +281,7 @@ impl Cache {
         let mut storage = storage.write().await;
         let old = storage.data.get(&event.path).unwrap().clone();
         if let Err(err) = Self::get_data(client, &event.path, &mut storage, sender).await {
-            debug_assert_eq!(err, Error::ZK(zookeeper_client::Error::NoNode));
+            debug_assert_eq!(err, zookeeper_client::Error::NoNode);
             // data deleted
             storage.tree.remove_child(&event.path);
             let child_data = storage.data.remove(&event.path).unwrap();
@@ -313,7 +313,7 @@ impl Cache {
                 .map(|child| make_path(&event.path, child))
                 .collect::<Vec<_>>(),
             Err(err) => {
-                debug_assert_eq!(err, Error::ZK(zookeeper_client::Error::NoNode));
+                debug_assert_eq!(err, zookeeper_client::Error::NoNode);
                 return;
             }
         };
@@ -338,7 +338,7 @@ impl Cache {
                     if let Err(err) =
                         Self::get_data(&zk, &child_path, &mut storage, &sender.clone()).await
                     {
-                        debug_assert_eq!(err, Error::ZK(zookeeper_client::Error::NoNode));
+                        debug_assert_eq!(err, zookeeper_client::Error::NoNode);
                         return;
                     }
                     storage.tree.add_child(&parent, child_path.clone());
@@ -354,7 +354,7 @@ impl Cache {
         path: &str,
         storage: &mut RwLockWriteGuard<'_, Storage>,
         sender: &tokio::sync::mpsc::UnboundedSender<WatchedEvent>,
-    ) -> Result<()> {
+    ) -> std::result::Result<(), zookeeper_client::Error> {
         let (data, stat, watcher) = client.get_and_watch_data(path).await?;
         storage.data.insert(
             path.to_string(),
@@ -363,7 +363,7 @@ impl Cache {
                 data,
                 stat,
             }
-                .into(),
+            .into(),
         );
         {
             let sender = sender.clone();
@@ -378,7 +378,7 @@ impl Cache {
         client: &zookeeper_client::Client,
         path: &str,
         sender: &tokio::sync::mpsc::UnboundedSender<WatchedEvent>,
-    ) -> Result<Vec<String>> {
+    ) -> std::result::Result<Vec<String>, zookeeper_client::Error> {
         let (children, watcher) = client.list_and_watch_children(path).await?;
         {
             let sender = sender.clone();
@@ -395,7 +395,7 @@ impl Cache {
         path: &str,
         storage: &mut RwLockWriteGuard<Storage>,
         sender: &tokio::sync::mpsc::UnboundedSender<WatchedEvent>,
-    ) -> Result<()> {
+    ) -> std::result::Result<(), zookeeper_client::Error> {
         Self::get_data(client, path, storage, sender).await?;
         let children = match Self::list_children(client, path, sender).await {
             Ok(children) => children,
@@ -409,7 +409,7 @@ impl Cache {
                 .collect(),
         );
         for child in children.iter() {
-            if let Err(Error::ZK(zookeeper_client::Error::NoNode)) =
+            if let Err(zookeeper_client::Error::NoNode) =
                 Self::fetch_all(client, make_path(path, child).as_str(), storage, sender).await
             {
                 continue;
