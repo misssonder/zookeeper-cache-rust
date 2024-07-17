@@ -13,9 +13,9 @@ pub use cache::{Cache, CacheBuilder};
 pub type Result<T> = std::result::Result<T, Error>;
 pub type SharedChildData = Arc<ChildData>;
 
-#[derive(Error, Debug, PartialEq)]
+#[derive(Error, Debug)]
 pub enum Error {
-    #[error("zk error :{0}")]
+    #[error("zk error: {0}")]
     ZK(#[from] zookeeper_client::Error),
 }
 

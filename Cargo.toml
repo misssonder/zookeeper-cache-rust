@@ -12,3 +12,6 @@ thiserror = "1.0"
 tokio = { version = "1.38", features = ["full"] }
 tokio-util = "0.7"
 zookeeper-client = "0.8"
+
+[dev-dependencies]
+testcontainers = "0.20"
