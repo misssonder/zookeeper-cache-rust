@@ -53,14 +53,32 @@ async fn cache() -> Result<()> {
     let url = server.url().await;
     let (_cache, mut stream) = CacheBuilder::new("/test").build(&url).await?;
     let client = server.client().await?;
-    client.create("/test", &[], EPHEMERAL_OPEN).await.unwrap();
+    client.create("/test", &[], PERSISTENT_OPEN).await.unwrap();
     let event = stream.next().await.unwrap();
     assert!(matches!(event, Event::Add(data) if data.path.eq("/test")));
+
+    client
+        .create("/test/test", &[], EPHEMERAL_OPEN)
+        .await
+        .unwrap();
+    let event = stream.next().await.unwrap();
+    assert!(matches!(event, Event::Add(data) if data.path.eq("/test/test")));
+
     client.set_data("/test", &[1], None).await.unwrap();
     let event = stream.next().await.unwrap();
     assert!(matches!(event, Event::Update{old,..} if old.path.eq("/test")));
+
+    client.set_data("/test/test", &[1], None).await.unwrap();
+    let event = stream.next().await.unwrap();
+    assert!(matches!(event, Event::Update{old,..} if old.path.eq("/test/test")));
+
+    client.delete("/test/test", None).await.unwrap();
+    let event = stream.next().await.unwrap();
+    assert!(matches!(event, Event::Delete(data) if data.path.eq("/test/test")));
+
     client.delete("/test", None).await.unwrap();
     let event = stream.next().await.unwrap();
     assert!(matches!(event, Event::Delete(data) if data.path.eq("/test")));
+
     Ok(())
 }
