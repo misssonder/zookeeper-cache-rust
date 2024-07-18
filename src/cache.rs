@@ -118,23 +118,11 @@ impl CacheBuilder {
     pub async fn build(
         self,
         addr: impl Into<String>,
-    ) -> Result<(Cache, impl Stream<Item = Event>)> {
+    ) -> Result<(Cache, impl Stream<Item=Event>)> {
         Cache::new(addr, self).await
     }
 }
 
-///
-/// ```rust
-/// use futures::StreamExt;
-/// use zookeeper_cache_rust::CacheBuilder;
-/// let (cache, mut stream) = CacheBuilder::default().build("localhost:2181").await?;
-/// tokio::spawn(async move{
-///    while let Some(event) = stream.next().await{
-///         // handle event
-///     }
-/// });
-/// let val = cache.get("/");
-/// ```
 pub struct Cache {
     addr: String,
     builder: CacheBuilder,
@@ -153,7 +141,7 @@ impl Cache {
     pub async fn new(
         addr: impl Into<String>,
         builder: CacheBuilder,
-    ) -> Result<(Self, impl Stream<Item = Event>)> {
+    ) -> Result<(Self, impl Stream<Item=Event>)> {
         let mut connector: zookeeper_client::Connector = (&builder).into();
         let addr = addr.into();
         let client = connector.connect(&addr).await?;
@@ -188,8 +176,9 @@ impl Cache {
             self.builder.path.as_str(),
             &mut new.write().await,
             sender,
+            true,
         )
-        .await?;
+            .await?;
         // send events of existed node
         let old = self.storage.read().await;
         let new = new.read().await;
@@ -442,24 +431,31 @@ impl Cache {
         path: &str,
         storage: &mut RwLockWriteGuard<Storage>,
         sender: &tokio::sync::mpsc::UnboundedSender<WatchedEvent>,
+        root: bool,
     ) -> std::result::Result<(), zookeeper_client::Error> {
-        Self::get_data(client, path, storage, sender).await?;
-        let children = match Self::list_children(client, path, sender).await {
-            Ok(children) => children,
-            Err(_) => return Ok(()),
+        let persistent = if root {
+            matches!( Self::get_root_node(client, path, storage, sender).await?,RootStatus::Persistent(_))
+        } else {
+            Self::get_data(client, path, storage, sender).await?.stat.ephemeral_owner == 0
         };
-        storage.tree.add_children(
-            path,
-            children
-                .iter()
-                .map(|child| make_path(path, child))
-                .collect(),
-        );
-        for child in children.iter() {
-            if let Err(zookeeper_client::Error::NoNode) =
-                Self::fetch_all(client, make_path(path, child).as_str(), storage, sender).await
-            {
-                continue;
+        if persistent {
+            let children = match Self::list_children(client, path, sender).await {
+                Ok(children) => children,
+                Err(_) => return Ok(()),
+            };
+            storage.tree.add_children(
+                path,
+                children
+                    .iter()
+                    .map(|child| make_path(path, child))
+                    .collect(),
+            );
+            for child in children.iter() {
+                if let Err(zookeeper_client::Error::NoNode) =
+                    Self::fetch_all(client, make_path(path, child).as_str(), storage, sender, false).await
+                {
+                    continue;
+                }
             }
         }
         Ok(())
