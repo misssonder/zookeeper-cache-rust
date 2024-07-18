@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use tokio_util::sync::CancellationToken;
-use zookeeper_client::{EventType, Stat, WatchedEvent};
+use zookeeper_client::{EventType, WatchedEvent};
 
 type Path = String;
 struct Storage {
@@ -118,7 +118,7 @@ impl CacheBuilder {
     pub async fn build(
         self,
         addr: impl Into<String>,
-    ) -> Result<(Cache, impl Stream<Item=Event>)> {
+    ) -> Result<(Cache, impl Stream<Item = Event>)> {
         Cache::new(addr, self).await
     }
 }
@@ -153,7 +153,7 @@ impl Cache {
     pub async fn new(
         addr: impl Into<String>,
         builder: CacheBuilder,
-    ) -> Result<(Self, impl Stream<Item=Event>)> {
+    ) -> Result<(Self, impl Stream<Item = Event>)> {
         let mut connector: zookeeper_client::Connector = (&builder).into();
         let addr = addr.into();
         let client = connector.connect(&addr).await?;
@@ -189,7 +189,7 @@ impl Cache {
             &mut new.write().await,
             sender,
         )
-            .await?;
+        .await?;
         // send events of existed node
         let old = self.storage.read().await;
         let new = new.read().await;
@@ -387,26 +387,32 @@ impl Cache {
     }
 
     /// get the root node, if it exists return true, or return false
+    #[async_recursion]
     async fn get_root_node(
         client: &zookeeper_client::Client,
         path: &str,
-        storage: &mut RwLockWriteGuard<Storage>,
+        storage: &mut RwLockWriteGuard<'_, Storage>,
         sender: &tokio::sync::mpsc::UnboundedSender<WatchedEvent>,
-    ) -> std::result::Result<bool, zookeeper_client::Error> {
+    ) -> std::result::Result<RootStatus, zookeeper_client::Error> {
         match client.check_and_watch_stat(path).await? {
             (None, watcher) => {
+                let sender = sender.clone();
                 tokio::spawn(async move {
                     let _ = sender.send(watcher.changed().await);
                 });
-                Ok(false)
+                Ok(RootStatus::NotExist)
             }
-            (Some(_), _) => {
+            (Some(stat), _) => {
                 if let Err(err) = Self::get_data(client, path, storage, sender).await {
                     debug_assert_eq!(err, zookeeper_client::Error::NoNode);
                     // if  node exist -> node deleted, we need to repeat this function
                     return Self::get_root_node(client, path, storage, sender).await;
                 }
-                Ok(true)
+                Ok(if stat.ephemeral_owner != 0 {
+                    RootStatus::Ephemeral
+                } else {
+                    RootStatus::Persistent
+                })
             }
         }
     }
@@ -498,6 +504,12 @@ fn compare(old: &[String], new: &[String]) -> (Vec<String>, Vec<String>) {
             .map(|s| s.to_string())
             .collect(),
     )
+}
+
+enum RootStatus {
+    NotExist,
+    Ephemeral,
+    Persistent,
 }
 
 #[cfg(test)]
