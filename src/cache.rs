@@ -248,7 +248,25 @@ impl Cache {
             EventType::NodeChildrenChanged => {
                 Self::handle_children_change(client, storage, event, sender, event_sender).await
             }
-            _ => {}
+            EventType::NodeCreated => {
+                Self::handle_node_created(client, storage, event, sender, event_sender).await
+            }
+        }
+    }
+
+    /// only used when root node be created
+    async fn handle_node_created(
+        client: &zookeeper_client::Client,
+        storage: &Arc<RwLock<Storage>>,
+        event: WatchedEvent,
+        sender: &tokio::sync::mpsc::UnboundedSender<WatchedEvent>,
+        event_sender: &tokio::sync::mpsc::UnboundedSender<Event>,
+    ) {
+        let mut storage = storage.write().await;
+        if let Ok(RootStatus::Ephemeral(data) | RootStatus::Persistent(data)) =
+            Self::get_root_node(client, &event.path, &mut storage, sender).await
+        {
+            let _ = event_sender.send(Event::Add(data));
         }
     }
 
@@ -402,17 +420,18 @@ impl Cache {
                 });
                 Ok(RootStatus::NotExist)
             }
-            (Some(stat), _) => {
-                if let Err(err) = Self::get_data(client, path, storage, sender).await {
-                    debug_assert_eq!(err, zookeeper_client::Error::NoNode);
-                    // if  node exist -> node deleted, we need to repeat this function
-                    return Self::get_root_node(client, path, storage, sender).await;
+            (Some(_), _) => {
+                match Self::get_data(client, path, storage, sender).await {
+                    Ok(data) if data.stat.ephemeral_owner != 0 => {
+                        Ok(RootStatus::Ephemeral(data.clone()))
+                    }
+                    Ok(data) => Ok(RootStatus::Persistent(data.clone())),
+                    Err(err) => {
+                        debug_assert_eq!(err, zookeeper_client::Error::NoNode);
+                        // if  node exist -> node deleted, we need to repeat this function
+                        Self::get_root_node(client, path, storage, sender).await
+                    }
                 }
-                Ok(if stat.ephemeral_owner != 0 {
-                    RootStatus::Ephemeral
-                } else {
-                    RootStatus::Persistent
-                })
             }
         }
     }
@@ -508,8 +527,8 @@ fn compare(old: &[String], new: &[String]) -> (Vec<String>, Vec<String>) {
 
 enum RootStatus {
     NotExist,
-    Ephemeral,
-    Persistent,
+    Ephemeral(SharedChildData),
+    Persistent(SharedChildData),
 }
 
 #[cfg(test)]
