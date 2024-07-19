@@ -1,7 +1,7 @@
+use futures::StreamExt;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
-use futures::StreamExt;
 use testcontainers::core::{ExecCommand, IntoContainerPort};
 use testcontainers::runners::AsyncRunner;
 use testcontainers::{ContainerAsync, GenericImage};
@@ -87,7 +87,6 @@ async fn cache() -> Result<()> {
     Ok(())
 }
 
-
 #[tokio::test]
 async fn concurrency() -> Result<()> {
     use futures::stream::StreamExt;
@@ -106,7 +105,10 @@ async fn concurrency() -> Result<()> {
                 let event: Event = event;
                 match event {
                     Event::Add(data) => {
-                        handle_event_map.write().await.insert(data.path.clone(), data);
+                        handle_event_map
+                            .write()
+                            .await
+                            .insert(data.path.clone(), data);
                     }
                     Event::Delete(data) => {
                         handle_event_map.write().await.remove(&data.path);
@@ -126,9 +128,7 @@ async fn concurrency() -> Result<()> {
         let task = tokio::spawn(async move {
             for _ in 0..100 {
                 let path = format!("{}/{}", root, i);
-                let _path = client
-                    .create(path.as_str(), &[], &EPHEMERAL_OPEN)
-                    .await?;
+                let _path = client.create(path.as_str(), &[], EPHEMERAL_OPEN).await?;
                 client.set_data(path.as_ref(), &[1, 2], None).await?;
                 client.delete(path.as_str(), None).await?;
             }
