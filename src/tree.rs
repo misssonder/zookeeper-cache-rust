@@ -5,6 +5,7 @@ use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::hash::Hash;
 
+/// A tree to storage children of zookeeper's persistent nodes
 #[derive(Clone)]
 pub struct Tree<T> {
     graph: StableGraph<T, usize>,
@@ -30,6 +31,7 @@ where
         &self.root
     }
 
+    /// Add child to parent
     pub fn add_child<B>(&mut self, parent: &B, child: T)
     where
         T: Borrow<B>,
@@ -42,6 +44,7 @@ where
         }
     }
 
+    /// Add children to parent
     pub fn add_children<B>(&mut self, parent: &B, children: Vec<T>)
     where
         T: Borrow<B>,
@@ -52,6 +55,7 @@ where
         }
     }
 
+    /// Remove child
     pub fn remove_child<B>(&mut self, child: &B) -> Option<T>
     where
         T: Borrow<B>,
@@ -63,6 +67,7 @@ where
         None
     }
 
+    /// Remove children
     pub fn children<B>(&self, parent: &B) -> Vec<&B>
     where
         T: Borrow<B>,

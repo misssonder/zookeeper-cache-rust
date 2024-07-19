@@ -41,13 +41,20 @@ pub struct AuthPacket {
     pub auth: Vec<u8>,
 }
 
+/// CacheBuilder is the configuration of Cache
 #[derive(Clone, Debug)]
 pub struct CacheBuilder {
+    /// The root path which be watched
     path: String,
+    /// The authes of Zookeeper
     authes: Vec<AuthPacket>,
+    /// The version of Zookeeper server
     server_version: Version,
+    /// Session timeout
     session_timeout: Duration,
+    /// Connect timeout
     connection_timeout: Duration,
+    /// When got session expired, we will try to  reconnect of reconnect timeout
     reconnect_timeout: Duration,
 }
 
@@ -123,6 +130,21 @@ impl CacheBuilder {
     }
 }
 
+/// Cache will watch root node and it's children nodes recursively
+///```no_run
+/// use futures::StreamExt;
+/// use zookeeper_cache_rust::CacheBuilder;
+/// async fn dox() -> zookeeper_cache_rust::Result<()>{
+/// let (cache,mut stream) = CacheBuilder::default().build("localhost:2181").await?;
+///    tokio::spawn(async move{
+///         while let Some(_event) = stream.next().await{
+///             // handle event
+///         }
+///    });
+///    cache.get("/test").await;
+///    Ok(())
+/// }
+
 pub struct Cache {
     addr: String,
     builder: CacheBuilder,
@@ -161,6 +183,15 @@ impl Cache {
         Ok((cache, events))
     }
 
+    /// Get data and stat through path
+    ///```no_run
+    /// use zookeeper_cache_rust::CacheBuilder;
+    /// async fn dox()->zookeeper_cache_rust::Result<()>{
+    ///    let (cache, _stream) = CacheBuilder::default().build("localhost:2181").await?;
+    ///    cache.get("/test").await;
+    ///    Ok(())
+    /// }
+    /// ```
     pub async fn get(&self, path: &str) -> Option<SharedChildData> {
         self.storage.read().await.data.get(path).cloned()
     }
