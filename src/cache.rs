@@ -118,7 +118,7 @@ impl CacheBuilder {
     pub async fn build(
         self,
         addr: impl Into<String>,
-    ) -> Result<(Cache, impl Stream<Item=Event>)> {
+    ) -> Result<(Cache, impl Stream<Item = Event>)> {
         Cache::new(addr, self).await
     }
 }
@@ -141,7 +141,7 @@ impl Cache {
     pub async fn new(
         addr: impl Into<String>,
         builder: CacheBuilder,
-    ) -> Result<(Self, impl Stream<Item=Event>)> {
+    ) -> Result<(Self, impl Stream<Item = Event>)> {
         let mut connector: zookeeper_client::Connector = (&builder).into();
         let addr = addr.into();
         let client = connector.connect(&addr).await?;
@@ -178,11 +178,14 @@ impl Cache {
             sender,
             true,
         )
-            .await?;
+        .await?;
         // send events of existed node
         let old = self.storage.read().await;
         let new = new.read().await;
         Self::compare_storage(self.builder.path.as_ref(), &old, &new, &self.event_sender).await;
+        drop(old);
+        let mut old = self.storage.write().await;
+        old.replace(new.data.clone(), new.tree.clone());
         Ok(())
     }
 
@@ -252,10 +255,19 @@ impl Cache {
         event_sender: &tokio::sync::mpsc::UnboundedSender<Event>,
     ) {
         let mut storage = storage.write().await;
-        if let Ok(RootStatus::Ephemeral(data) | RootStatus::Persistent(data)) =
-            Self::get_root_node(client, &event.path, &mut storage, sender).await
-        {
-            let _ = event_sender.send(Event::Add(data));
+        if let Ok(status) = Self::get_root_node(client, &event.path, &mut storage, sender).await {
+            match status {
+                RootStatus::Ephemeral(data) => {
+                    let _ = event_sender.send(Event::Add(data));
+                }
+                RootStatus::Persistent(data) => {
+                    if let Err(err) = Self::list_children(client, &event.path, sender).await {
+                        debug_assert_eq!(err, zookeeper_client::Error::NoNode);
+                    }
+                    let _ = event_sender.send(Event::Add(data));
+                }
+                _ => {}
+            }
         }
     }
 
@@ -434,9 +446,16 @@ impl Cache {
         root: bool,
     ) -> std::result::Result<(), zookeeper_client::Error> {
         let persistent = if root {
-            matches!( Self::get_root_node(client, path, storage, sender).await?,RootStatus::Persistent(_))
+            matches!(
+                Self::get_root_node(client, path, storage, sender).await?,
+                RootStatus::Persistent(_)
+            )
         } else {
-            Self::get_data(client, path, storage, sender).await?.stat.ephemeral_owner == 0
+            Self::get_data(client, path, storage, sender)
+                .await?
+                .stat
+                .ephemeral_owner
+                == 0
         };
         if persistent {
             let children = match Self::list_children(client, path, sender).await {
@@ -451,8 +470,14 @@ impl Cache {
                     .collect(),
             );
             for child in children.iter() {
-                if let Err(zookeeper_client::Error::NoNode) =
-                    Self::fetch_all(client, make_path(path, child).as_str(), storage, sender, false).await
+                if let Err(zookeeper_client::Error::NoNode) = Self::fetch_all(
+                    client,
+                    make_path(path, child).as_str(),
+                    storage,
+                    sender,
+                    false,
+                )
+                .await
                 {
                     continue;
                 }
