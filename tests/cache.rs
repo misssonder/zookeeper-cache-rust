@@ -55,11 +55,12 @@ impl TestZookeeper {
 async fn cache() -> Result<()> {
     let server = TestZookeeper::boot().await;
     let url = server.url().await;
-    let (_cache, mut stream) = CacheBuilder::new("/test").build(&url).await?;
+    let (cache, mut stream) = CacheBuilder::new("/test").build(&url).await?;
     let client = server.client().await?;
     client.create("/test", &[], PERSISTENT_OPEN).await.unwrap();
     let event = stream.next().await.unwrap();
     assert!(matches!(event, Event::Add(data) if data.path.eq("/test")));
+    assert!(cache.get("/test").await.is_some());
 
     client
         .create("/test/test", &[], EPHEMERAL_OPEN)
