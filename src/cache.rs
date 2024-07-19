@@ -5,9 +5,10 @@ use async_recursion::async_recursion;
 use futures::StreamExt;
 use futures::{stream, Stream};
 use std::collections::{HashMap, HashSet};
+use std::mem;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
+use tokio::sync::{RwLock, RwLockWriteGuard};
 use tokio_util::sync::CancellationToken;
 use zookeeper_client::{EventType, WatchedEvent};
 
@@ -25,10 +26,11 @@ impl Storage {
         }
     }
 
-    #[allow(dead_code)]
-    pub fn replace(&mut self, data: HashMap<Path, SharedChildData>, tree: Tree<Path>) {
-        self.data = data;
-        self.tree = tree;
+    pub fn replace(&mut self, data: HashMap<Path, SharedChildData>, tree: Tree<Path>) -> Storage {
+        Storage {
+            data: mem::replace(&mut self.data, data),
+            tree: mem::replace(&mut self.tree, tree),
+        }
     }
 }
 
@@ -138,7 +140,7 @@ impl CacheBuilder {
     pub async fn build(
         self,
         addr: impl Into<String>,
-    ) -> Result<(Cache, impl Stream<Item = Event>)> {
+    ) -> Result<(Cache, impl Stream<Item=Event>)> {
         Cache::new(addr, self).await
     }
 }
@@ -175,7 +177,7 @@ impl Cache {
     pub async fn new(
         addr: impl Into<String>,
         builder: CacheBuilder,
-    ) -> Result<(Self, impl Stream<Item = Event>)> {
+    ) -> Result<(Self, impl Stream<Item=Event>)> {
         let mut connector: zookeeper_client::Connector = (&builder).into();
         let addr = addr.into();
         let client = connector.connect(&addr).await?;
@@ -221,13 +223,11 @@ impl Cache {
             sender,
             true,
         )
-        .await?;
+            .await?;
         // send events of existed node
-        let old = self.storage.read().await;
-        let new = new.read().await;
-        Self::compare_storage(self.builder.path.as_ref(), &old, &new, &self.event_sender).await;
-        drop(old);
         let mut old = self.storage.write().await;
+        let new = new.write().await;
+        Self::compare_storage(self.builder.path.as_ref(), &old, &new, &self.event_sender).await;
         old.replace(new.data.clone(), new.tree.clone());
         Ok(())
     }
@@ -520,7 +520,7 @@ impl Cache {
                     sender,
                     false,
                 )
-                .await
+                    .await
                 {
                     continue;
                 }
@@ -532,8 +532,8 @@ impl Cache {
     #[async_recursion]
     async fn compare_storage(
         path: &str,
-        old: &RwLockReadGuard<'_, Storage>,
-        new: &RwLockReadGuard<'_, Storage>,
+        old: &Storage,
+        new: &Storage,
         sender: &tokio::sync::mpsc::UnboundedSender<Event>,
     ) {
         let old_data = old.data.get(path);
