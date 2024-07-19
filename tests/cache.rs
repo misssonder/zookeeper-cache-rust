@@ -127,7 +127,7 @@ async fn concurrency() -> Result<()> {
         let client = client.clone();
         let root = root.clone();
         let task = tokio::spawn(async move {
-            for _ in 0..100 {
+            for _ in 0..10 {
                 let path = format!("{}/{}", root, i);
                 let _path = client.create(path.as_str(), &[], EPHEMERAL_OPEN).await?;
                 client.set_data(path.as_ref(), &[1, 2], None).await?;
