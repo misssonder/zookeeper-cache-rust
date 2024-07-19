@@ -89,6 +89,19 @@ impl From<&CacheBuilder> for zookeeper_client::Connector {
     }
 }
 
+/// CacheBuilder cant config the Cache's configuration
+///```no_run
+/// use std::time::Duration;
+/// use zookeeper_cache_rust::CacheBuilder;
+/// async fn dox() -> zookeeper_cache_rust::Result<()>{
+///    let builder = CacheBuilder::new("/test")
+///                .with_version(3,9,1)
+///                .with_connect_timeout(Duration::from_secs(10))
+///                .with_session_timeout(Duration::from_secs(10))
+///                .with_reconnect_timeout(Duration::from_secs(1));
+///    let (_cache,_stream) = builder.build("localhost:2181").await?;
+///    Ok(())
+/// }
 impl CacheBuilder {
     pub fn new(path: impl Into<String>) -> Self {
         Self {
@@ -135,16 +148,15 @@ impl CacheBuilder {
 /// use futures::StreamExt;
 /// use zookeeper_cache_rust::CacheBuilder;
 /// async fn dox() -> zookeeper_cache_rust::Result<()>{
-/// let (cache,mut stream) = CacheBuilder::default().build("localhost:2181").await?;
-///    tokio::spawn(async move{
-///         while let Some(_event) = stream.next().await{
-///             // handle event
-///         }
-///    });
+///    let (cache,mut stream) = CacheBuilder::default().build("localhost:2181").await?;
+///        tokio::spawn(async move{
+///            while let Some(_event) = stream.next().await{
+///                // handle event
+///            }
+///        });
 ///    cache.get("/test").await;
 ///    Ok(())
 /// }
-
 pub struct Cache {
     addr: String,
     builder: CacheBuilder,
