@@ -5,11 +5,13 @@ use async_recursion::async_recursion;
 use futures::StreamExt;
 use futures::{stream, Stream};
 use std::collections::{HashMap, HashSet};
+use std::mem;
+use std::ops::DerefMut;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
+use tokio::sync::{RwLock, RwLockWriteGuard};
 use tokio_util::sync::CancellationToken;
-use zookeeper_client::{EventType, WatchedEvent};
+use zookeeper_client::{EventType, SessionState, WatchedEvent};
 
 type Path = String;
 struct Storage {
@@ -25,10 +27,11 @@ impl Storage {
         }
     }
 
-    #[allow(dead_code)]
-    pub fn replace(&mut self, data: HashMap<Path, SharedChildData>, tree: Tree<Path>) {
-        self.data = data;
-        self.tree = tree;
+    pub fn replace(&mut self, data: HashMap<Path, SharedChildData>, tree: Tree<Path>) -> Storage {
+        Storage {
+            data: mem::replace(&mut self.data, data),
+            tree: mem::replace(&mut self.tree, tree),
+        }
     }
 }
 
@@ -184,13 +187,20 @@ impl Cache {
         let events = EventStream { watcher };
         let cache = Self {
             addr,
-            builder,
+            builder: builder.clone(),
             storage,
             event_sender: sender,
             token: CancellationToken::new(),
         };
         let (sender, watcher) = tokio::sync::mpsc::unbounded_channel();
-        cache.init_nodes(&client, &sender).await?;
+        Self::init_nodes(
+            &client,
+            &builder.path,
+            cache.storage.write().await.deref_mut(),
+            &sender,
+            &cache.event_sender,
+        )
+        .await?;
         cache.watch(client, sender, watcher).await;
         Ok((cache, events))
     }
@@ -209,41 +219,35 @@ impl Cache {
     }
 
     async fn init_nodes(
-        &self,
         client: &zookeeper_client::Client,
+        path: &str,
+        storage: &mut Storage,
         sender: &tokio::sync::mpsc::UnboundedSender<WatchedEvent>,
+        event_sender: &tokio::sync::mpsc::UnboundedSender<Event>,
     ) -> Result<()> {
-        let new = Arc::new(RwLock::new(Storage::new(self.builder.path.clone())));
-        Self::fetch_all(
-            client,
-            self.builder.path.as_str(),
-            &mut new.write().await,
-            sender,
-            true,
-        )
-        .await?;
+        let new = Arc::new(RwLock::new(Storage::new(path.to_string())));
+        Self::fetch_all(client, path, &mut new.write().await, sender, true).await?;
         // send events of existed node
-        let old = self.storage.read().await;
-        let new = new.read().await;
-        Self::compare_storage(self.builder.path.as_ref(), &old, &new, &self.event_sender).await;
-        drop(old);
-        let mut old = self.storage.write().await;
-        old.replace(new.data.clone(), new.tree.clone());
+        let new = new.write().await;
+        Self::compare_storage(path, storage, &new, event_sender).await;
+        storage.replace(new.data.clone(), new.tree.clone());
         Ok(())
     }
 
     async fn watch(
         &self,
-        client: zookeeper_client::Client,
+        mut client: zookeeper_client::Client,
         sender: tokio::sync::mpsc::UnboundedSender<WatchedEvent>,
         mut watcher: tokio::sync::mpsc::UnboundedReceiver<WatchedEvent>,
     ) {
+        let addr = self.addr.clone();
         let storage = self.storage.clone();
         let sender = sender.clone();
         let builder = self.builder.clone();
         let event_sender = self.event_sender.clone();
         let token = self.token.clone();
         tokio::spawn(async move {
+            let mut control = HandleControl::Handle;
             loop {
                 tokio::select! {
                     _ = token.cancelled() => {
@@ -252,7 +256,21 @@ impl Cache {
                     event = watcher.recv() => {
                         match event{
                             Some(event) => {
-                                Self::handle_event(&builder.path, &client, &storage, event, &sender, &event_sender).await;
+                                match control {
+                                    HandleControl::Handle => {},
+                                    HandleControl::Continue => {
+                                        if event.event_type == EventType::Session && event.session_state.is_terminated(){
+                                            continue;
+                                        } else {
+                                            control = HandleControl::Handle;
+                                        }
+                                    }
+                                };
+                                if let Some(reconnect) = Self::handle_event(&addr, &client, &builder, &storage, event, &sender, &event_sender, &token).await{
+                                    client = reconnect;
+                                    // to ignore the other session expired events
+                                    control = HandleControl::Continue;
+                                }
                             }
                             None => break
                         }
@@ -264,29 +282,91 @@ impl Cache {
 
     #[allow(clippy::too_many_arguments)]
     async fn handle_event(
-        _path: &str,
+        addr: &str,
         client: &zookeeper_client::Client,
+        builder: &CacheBuilder,
         storage: &Arc<RwLock<Storage>>,
         event: WatchedEvent,
         sender: &tokio::sync::mpsc::UnboundedSender<WatchedEvent>,
         event_sender: &tokio::sync::mpsc::UnboundedSender<Event>,
-    ) {
+        token: &CancellationToken,
+    ) -> Option<zookeeper_client::Client> {
         match event.event_type {
             EventType::Session => {
-                // todo
-                // handle session changed
+                if let Some(client) =
+                    Self::handle_session(addr, builder, storage, event, sender, event_sender, token)
+                        .await
+                {
+                    return Some(client);
+                }
             }
-            EventType::NodeDeleted => Self::handle_node_deleted(storage, event, event_sender).await,
+            EventType::NodeDeleted => {
+                Self::handle_node_deleted(storage, event, event_sender).await;
+            }
             EventType::NodeDataChanged => {
-                Self::handle_node_data_changed(client, storage, event, sender, event_sender).await
+                Self::handle_node_data_changed(client, storage, event, sender, event_sender).await;
             }
             EventType::NodeChildrenChanged => {
-                Self::handle_children_change(client, storage, event, sender, event_sender).await
+                Self::handle_children_change(client, storage, event, sender, event_sender).await;
             }
             EventType::NodeCreated => {
-                Self::handle_node_created(client, storage, event, sender, event_sender).await
+                Self::handle_node_created(client, storage, event, sender, event_sender).await;
             }
         }
+        None
+    }
+
+    async fn handle_session(
+        addr: &str,
+        builder: &CacheBuilder,
+        storage: &Arc<RwLock<Storage>>,
+        event: WatchedEvent,
+        sender: &tokio::sync::mpsc::UnboundedSender<WatchedEvent>,
+        event_sender: &tokio::sync::mpsc::UnboundedSender<Event>,
+        token: &CancellationToken,
+    ) -> Option<zookeeper_client::Client> {
+        // todo add log
+        match event.session_state {
+            SessionState::Expired | SessionState::Closed => {
+                let mut interval = tokio::time::interval(builder.reconnect_timeout);
+                let mut connector: zookeeper_client::Connector = builder.into();
+                let client = loop {
+                    tokio::select! {
+                        _ = token.cancelled() => {
+                            return None
+                        }
+                        _ = interval.tick() => {
+                             match connector.connect(addr).await {
+                                Ok(zk) => break zk,
+                                Err(_err) => {
+                                }
+                            };
+                        }
+                    }
+                };
+                {
+                    loop {
+                        match Self::init_nodes(
+                            &client,
+                            &builder.path,
+                            storage.write().await.deref_mut(),
+                            sender,
+                            event_sender,
+                        )
+                        .await
+                        {
+                            Ok(_) => break,
+                            Err(_err) => {
+                                interval.tick().await;
+                            }
+                        }
+                    }
+                }
+                return Some(client);
+            }
+            _ => {}
+        };
+        None
     }
 
     /// only used when root node be created
@@ -532,8 +612,8 @@ impl Cache {
     #[async_recursion]
     async fn compare_storage(
         path: &str,
-        old: &RwLockReadGuard<'_, Storage>,
-        new: &RwLockReadGuard<'_, Storage>,
+        old: &Storage,
+        new: &Storage,
         sender: &tokio::sync::mpsc::UnboundedSender<Event>,
     ) {
         let old_data = old.data.get(path);
@@ -589,10 +669,17 @@ fn compare(old: &[String], new: &[String]) -> (Vec<String>, Vec<String>) {
     )
 }
 
+#[derive(Clone, Debug)]
 enum RootStatus {
     NotExist,
     Ephemeral(SharedChildData),
     Persistent(SharedChildData),
+}
+
+#[derive(Clone, Debug)]
+enum HandleControl {
+    Handle,
+    Continue,
 }
 
 #[cfg(test)]

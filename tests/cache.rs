@@ -39,6 +39,12 @@ impl TestZookeeper {
             server: zookeeper().await,
         }
     }
+
+    #[allow(dead_code)]
+    pub async fn stop(&self) {
+        self.server.stop().await.unwrap()
+    }
+
     pub async fn client(&self) -> Result<zookeeper_client::Client> {
         let url = self.url().await;
         Ok(zookeeper_client::Client::connect(&url).await?)
@@ -68,6 +74,8 @@ async fn cache() -> Result<()> {
         .unwrap();
     let event = stream.next().await.unwrap();
     assert!(matches!(event, Event::Add(data) if data.path.eq("/test/test")));
+    let (data, _stat) = client.get_data("/test").await.unwrap();
+    assert_eq!(&data, &cache.get("/test").await.unwrap().data);
 
     client.set_data("/test", &[1], None).await.unwrap();
     let event = stream.next().await.unwrap();
@@ -84,7 +92,68 @@ async fn cache() -> Result<()> {
     client.delete("/test", None).await.unwrap();
     let event = stream.next().await.unwrap();
     assert!(matches!(event, Event::Delete(data) if data.path.eq("/test")));
+    Ok(())
+}
 
+#[tokio::test]
+async fn cache_expired() -> Result<()> {
+    let server = TestZookeeper::boot().await;
+    let url = server.url().await;
+    let (cache, mut stream) = CacheBuilder::new("/test")
+        .with_session_timeout(Duration::from_secs(5))
+        .build(url)
+        .await
+        .unwrap();
+    let client = server.client().await.unwrap();
+    client.create("/test", &[], PERSISTENT_OPEN).await.unwrap();
+    let event = stream.next().await.unwrap();
+    assert!(matches!(event, Event::Add(data) if data.path.eq("/test")));
+
+    client
+        .create("/test/1", &[], PERSISTENT_OPEN)
+        .await
+        .unwrap();
+    let event = stream.next().await.unwrap();
+    assert!(matches!(event, Event::Add(data) if data.path.eq("/test/1")));
+
+    client
+        .create("/test/2", &[], PERSISTENT_OPEN)
+        .await
+        .unwrap();
+    let event = stream.next().await.unwrap();
+    assert!(matches!(event, Event::Add(data) if data.path.eq("/test/2")));
+
+    client
+        .create("/test/3", &[], PERSISTENT_OPEN)
+        .await
+        .unwrap();
+    let event = stream.next().await.unwrap();
+    assert!(matches!(event, Event::Add(data) if data.path.eq("/test/3")));
+
+    // block zookeeper client
+    std::thread::sleep(Duration::from_secs(10));
+
+    let client = server.client().await.unwrap();
+    client
+        .create("/test/4", &[], PERSISTENT_OPEN)
+        .await
+        .unwrap();
+    client
+        .create("/test/5", &[], PERSISTENT_OPEN)
+        .await
+        .unwrap();
+    client
+        .create("/test/6", &[], PERSISTENT_OPEN)
+        .await
+        .unwrap();
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    for path in [
+        "/test", "/test/1", "/test/2", "/test/3", "/test/4", "/test/5", "/test/6",
+    ] {
+        let (data, _stat) = client.get_data(path).await.unwrap();
+        println!("{}", path);
+        assert_eq!(&data, &cache.get(path).await.unwrap().data);
+    }
     Ok(())
 }
 

@@ -19,6 +19,7 @@ pub enum Error {
     ZK(#[from] zookeeper_client::Error),
 }
 
+//todo remove stat
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ChildData {
     pub path: String,
