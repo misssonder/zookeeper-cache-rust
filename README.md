@@ -1,4 +1,6 @@
 # Zookeeper-cache-rust
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fmisssonder%2Fzookeeper-cache-rust.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2Fmisssonder%2Fzookeeper-cache-rust?ref=badge_shield)
+
 Zookeeper-cache-rust is a asynchronous, pure rust implementation of ZooKeeper client cache, which provides a easy to watch the nodes' status of zookeeper.
 # Example
 Cache will watch root node and it's children nodes recursively. 
@@ -39,3 +41,7 @@ async fn main() {
     assert!(matches!(event, Event::Delete(data) if data.path.eq("/test")));
 }
 ```
+
+
+## License
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fmisssonder%2Fzookeeper-cache-rust.svg?type=large)](https://app.fossa.com/projects/git%2Bgithub.com%2Fmisssonder%2Fzookeeper-cache-rust?ref=badge_large)
