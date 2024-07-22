@@ -140,7 +140,7 @@ impl CacheBuilder {
     pub async fn build(
         self,
         addr: impl Into<String>,
-    ) -> Result<(Cache, impl Stream<Item=Event>)> {
+    ) -> Result<(Cache, impl Stream<Item = Event>)> {
         Cache::new(addr, self).await
     }
 }
@@ -177,7 +177,7 @@ impl Cache {
     pub async fn new(
         addr: impl Into<String>,
         builder: CacheBuilder,
-    ) -> Result<(Self, impl Stream<Item=Event>)> {
+    ) -> Result<(Self, impl Stream<Item = Event>)> {
         let mut connector: zookeeper_client::Connector = (&builder).into();
         let addr = addr.into();
         let client = connector.connect(&addr).await?;
@@ -223,7 +223,7 @@ impl Cache {
             sender,
             true,
         )
-            .await?;
+        .await?;
         // send events of existed node
         let mut old = self.storage.write().await;
         let new = new.write().await;
@@ -520,7 +520,7 @@ impl Cache {
                     sender,
                     false,
                 )
-                    .await
+                .await
                 {
                     continue;
                 }
