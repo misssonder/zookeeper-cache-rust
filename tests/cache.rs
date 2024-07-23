@@ -6,7 +6,7 @@ use testcontainers::core::{ExecCommand, IntoContainerPort};
 use testcontainers::runners::AsyncRunner;
 use testcontainers::{ContainerAsync, GenericImage};
 use tokio::sync::RwLock;
-use zookeeper_cache_rust::{CacheBuilder, Error, Event, Result};
+use zookeeper_cache::{CacheBuilder, Error, Event, Result};
 
 static ZK_IMAGE_TAG: &str = "3.9.1";
 static ZK_PORT: u16 = 2181;
