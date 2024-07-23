@@ -1,12 +1,12 @@
 [package]
 name = "zookeeper-cache"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "ZooKeeper client cache"
 homepage = "https://github.com/misssonder/zookeeper-cache-rust"
 repository = "https://github.com/misssonder/zookeeper-cache-rust"
 license = "MIT"
-keywords = ["ZooKeeper"]
+keywords = ["ZooKeeper", "Cache"]
 
 [dependencies]
 async-recursion = "1.1"
