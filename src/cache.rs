@@ -95,8 +95,8 @@ impl From<&CacheBuilder> for zookeeper_client::Connector {
 /// CacheBuilder cant config the Cache's configuration
 ///```no_run
 /// use std::time::Duration;
-/// use zookeeper_cache_rust::CacheBuilder;
-/// async fn dox() -> zookeeper_cache_rust::Result<()>{
+/// use zookeeper_cache::CacheBuilder;
+/// async fn dox() -> zookeeper_cache::Result<()>{
 ///    let builder = CacheBuilder::new("/test")
 ///                .with_version(3,9,1)
 ///                .with_connect_timeout(Duration::from_secs(10))
@@ -149,8 +149,8 @@ impl CacheBuilder {
 /// Cache will watch root node and it's children nodes recursively
 ///```no_run
 /// use futures::StreamExt;
-/// use zookeeper_cache_rust::CacheBuilder;
-/// async fn dox() -> zookeeper_cache_rust::Result<()>{
+/// use zookeeper_cache::CacheBuilder;
+/// async fn dox() -> zookeeper_cache::Result<()>{
 ///    let (cache,mut stream) = CacheBuilder::default().build("localhost:2181").await?;
 ///        tokio::spawn(async move{
 ///            while let Some(_event) = stream.next().await{
@@ -207,8 +207,8 @@ impl Cache {
 
     /// Get data and stat through path
     ///```no_run
-    /// use zookeeper_cache_rust::CacheBuilder;
-    /// async fn dox()->zookeeper_cache_rust::Result<()>{
+    /// use zookeeper_cache::CacheBuilder;
+    /// async fn dox()->zookeeper_cache::Result<()>{
     ///    let (cache, _stream) = CacheBuilder::default().build("localhost:2181").await?;
     ///    cache.get("/test").await;
     ///    Ok(())
