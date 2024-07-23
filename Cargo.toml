@@ -1,5 +1,5 @@
 [package]
-name = "zookeeper-cache-rust"
+name = "zookeeper-cache"
 version = "0.1.0"
 edition = "2021"
 description = "ZooKeeper client cache"
