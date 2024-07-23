@@ -2,6 +2,10 @@
 [![mit-license](https://img.shields.io/github/license/misssonder/zookeeper-cache-rust)](LICENSE)
 
 Zookeeper-cache-rust is a asynchronous, pure rust implementation of ZooKeeper client cache, which provides a easy to watch the nodes' status of zookeeper.
+## Usage
+```shell
+cargo add zookeeper-cache
+```
 ## Example
 Cache will watch root node and it's children nodes recursively. 
 ```rust
