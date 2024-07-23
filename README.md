@@ -10,9 +10,9 @@ cargo add zookeeper-cache
 Cache will watch root node and it's children nodes recursively. 
 ```rust
 use futures::StreamExt;
-use zookeeper_cache_rust::CacheBuilder;
+use zookeeper_cache::CacheBuilder;
 #[tokio::main]
-async fn main() -> zookeeper_cache_rust::Result<()> {
+async fn main() -> zookeeper_cache::Result<()> {
     let (cache, mut stream) = CacheBuilder::default().build("localhost:2181").await?;
     tokio::spawn(async move {
         while let Some(event) = stream.next().await {
