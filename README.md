@@ -1,4 +1,6 @@
 # Zookeeper-cache-rust
+[![crates.io](https://img.shields.io/crates/v/zookeeper-cache)](https://crates.io/crates/zookeeper-cache)
+[![docs.rs](https://img.shields.io/docsrs/zookeeper-cache)](https://docs.rs/zookeeper-cache)
 [![mit-license](https://img.shields.io/github/license/misssonder/zookeeper-cache-rust)](LICENSE)
 
 Zookeeper-cache-rust is a asynchronous, pure rust implementation of ZooKeeper client cache, which provides a easy to watch the nodes' status of zookeeper.
@@ -45,7 +47,7 @@ async fn main() {
     assert!(matches!(event, Event::Delete(data) if data.path.eq("/test")));
 }
 ```
-
-
+## Reference
+Use [zookeeper-client-rust](https://github.com/kezhuw/zookeeper-client-rust) to connect ZooKeeper
 ## License
 [![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fmisssonder%2Fzookeeper-cache-rust.svg?type=large)](https://app.fossa.com/projects/git%2Bgithub.com%2Fmisssonder%2Fzookeeper-cache-rust?ref=badge_large)
