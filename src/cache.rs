@@ -307,7 +307,7 @@ impl Cache {
                 Self::handle_node_data_changed(client, storage, event, sender, event_sender).await;
             }
             EventType::NodeChildrenChanged => {
-                Self::handle_children_change(client, storage, event, sender, event_sender).await;
+                Self::handle_children_changed(client, storage, event, sender, event_sender).await;
             }
             EventType::NodeCreated => {
                 Self::handle_node_created(client, storage, event, sender, event_sender).await;
@@ -434,7 +434,7 @@ impl Cache {
         let _ = event_sender.send(Event::Update { old, new });
     }
 
-    async fn handle_children_change(
+    async fn handle_children_changed(
         client: &zookeeper_client::Client,
         storage: &Arc<RwLock<Storage>>,
         event: WatchedEvent,
@@ -477,14 +477,20 @@ impl Cache {
                 20,
                 |(zk, storage, parent, child_path, sender, event_sender)| async move {
                     let mut storage = storage.write().await;
-                    if let Err(err) =
-                        Self::get_data(&zk, &child_path, &mut storage, &sender.clone()).await
-                    {
-                        debug_assert_eq!(err, zookeeper_client::Error::NoNode);
-                        return;
-                    }
+                    let child_data =
+                        match Self::get_data(&zk, &child_path, &mut storage, &sender).await {
+                            Ok(data) => data,
+                            Err(err) => {
+                                debug_assert_eq!(err, zookeeper_client::Error::NoNode);
+                                return;
+                            }
+                        };
                     storage.tree.add_child(&parent, child_path.clone());
-                    let child_data = storage.data.get(&child_path).unwrap();
+                    if child_data.stat.ephemeral_owner == 0 {
+                        if let Err(err) = Self::list_children(&zk, &child_path, &sender).await {
+                            debug_assert_eq!(err, zookeeper_client::Error::NoNode);
+                        }
+                    }
                     let _ = event_sender.send(Event::Add(child_data.clone()));
                 },
             )
