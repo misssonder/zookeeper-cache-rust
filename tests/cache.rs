@@ -60,38 +60,81 @@ impl TestZookeeper {
 #[tokio::test]
 async fn cache() -> Result<()> {
     let server = TestZookeeper::boot().await;
+    let (root, second, third) = ("/test", "/test/test", "/test/test/test");
     let url = server.url().await;
-    let (cache, mut stream) = CacheBuilder::new("/test").build(&url).await?;
+    let (cache, mut stream) = CacheBuilder::new(root).build(&url).await?;
     let client = server.client().await?;
-    client.create("/test", &[], PERSISTENT_OPEN).await.unwrap();
-    let event = stream.next().await.unwrap();
-    assert!(matches!(event, Event::Add(data) if data.path.eq("/test")));
-    assert!(cache.get("/test").await.is_some());
+    {
+        client.create(root, &[], PERSISTENT_OPEN).await.unwrap();
+        let event = stream.next().await.unwrap();
+        assert!(matches!(event, Event::Add(data) if data.path.eq(root)));
+        assert!(cache.get(root).await.is_some());
+    }
 
-    client
-        .create("/test/test", &[], EPHEMERAL_OPEN)
-        .await
-        .unwrap();
-    let event = stream.next().await.unwrap();
-    assert!(matches!(event, Event::Add(data) if data.path.eq("/test/test")));
-    let (data, _stat) = client.get_data("/test").await.unwrap();
-    assert_eq!(&data, &cache.get("/test").await.unwrap().data);
+    {
+        client.create(second, &[], PERSISTENT_OPEN).await.unwrap();
+        let event = stream.next().await.unwrap();
+        assert!(matches!(event, Event::Add(data) if data.path.eq(second)));
+        assert!(cache.get(second).await.is_some());
+    }
+    {
+        client.set_data(second, &[1], None).await.unwrap();
+        let event = stream.next().await.unwrap();
+        assert!(matches!(event, Event::Update{old,..} if old.path.eq(second)));
+    }
 
-    client.set_data("/test", &[1], None).await.unwrap();
-    let event = stream.next().await.unwrap();
-    assert!(matches!(event, Event::Update{old,..} if old.path.eq("/test")));
+    {
+        client.create(third, &[], EPHEMERAL_OPEN).await.unwrap();
+        let event = tokio::time::timeout(Duration::from_secs(1), stream.next())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(matches!(event, Event::Add(data) if data.path.eq(third)));
+        assert!(cache.get(third).await.is_some());
+    }
 
-    client.set_data("/test/test", &[1], None).await.unwrap();
-    let event = stream.next().await.unwrap();
-    assert!(matches!(event, Event::Update{old,..} if old.path.eq("/test/test")));
+    {
+        client.delete(third, None).await.unwrap();
+        let event = stream.next().await.unwrap();
+        assert!(matches!(event, Event::Delete(data) if data.path.eq(third)));
+        assert!(cache.get(third).await.is_none());
+    }
+    {
+        client.create(third, &[], PERSISTENT_OPEN).await.unwrap();
+        let event = tokio::time::timeout(Duration::from_secs(1), stream.next())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(matches!(event, Event::Add(data) if data.path.eq(third)));
+        assert!(cache.get(third).await.is_some());
+    }
+    {
+        client.set_data(third, &[1], None).await.unwrap();
+        let event = stream.next().await.unwrap();
+        assert!(matches!(event, Event::Update{old,..} if old.path.eq(third)));
+    }
 
-    client.delete("/test/test", None).await.unwrap();
-    let event = stream.next().await.unwrap();
-    assert!(matches!(event, Event::Delete(data) if data.path.eq("/test/test")));
+    {
+        client.delete(third, None).await.unwrap();
+        let event = stream.next().await.unwrap();
+        assert!(matches!(event, Event::Delete(data) if data.path.eq(third)));
+        assert!(&cache.get(third).await.is_none());
+    }
 
-    client.delete("/test", None).await.unwrap();
-    let event = stream.next().await.unwrap();
-    assert!(matches!(event, Event::Delete(data) if data.path.eq("/test")));
+    {
+        client.delete(second, None).await.unwrap();
+        let event = stream.next().await.unwrap();
+        assert!(matches!(event, Event::Delete(data) if data.path.eq(second)));
+        assert!(&cache.get(second).await.is_none());
+    }
+
+    {
+        client.delete(root, None).await.unwrap();
+        let event = stream.next().await.unwrap();
+        assert!(matches!(event, Event::Delete(data) if data.path.eq(root)));
+        assert!(&cache.get(root).await.is_none());
+    }
+
     Ok(())
 }
 
