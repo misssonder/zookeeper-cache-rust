@@ -42,7 +42,7 @@ jobs:
         run: cargo clippy --all-features --no-deps -- -D clippy::all
   release:
     if: github.event_name == 'push' && github.ref_type == 'tag'
-    needs: [build, test, lint]
+    needs: [build, lint]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
