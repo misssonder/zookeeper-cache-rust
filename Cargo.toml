@@ -1,6 +1,6 @@
 [package]
 name = "zookeeper-cache"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 description = "ZooKeeper client cache"
 homepage = "https://github.com/misssonder/zookeeper-cache-rust"
